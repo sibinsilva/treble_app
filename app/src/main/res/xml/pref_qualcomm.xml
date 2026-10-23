@@ -2,7 +2,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory
-        android:title="CAMERA"
+        android:title="Camera"
         android:layout="@layout/preference_category_custom">
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
@@ -13,7 +13,7 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="AUDIO"
+        android:title="Audio"
         android:layout="@layout/preference_category_custom">
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"

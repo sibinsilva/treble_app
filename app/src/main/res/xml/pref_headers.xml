@@ -1,41 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <Preference
-        android:layout="@layout/preference_header"
-        android:selectable="false"
-        android:enabled="false" />
+        android:layout="@layout/preference_hero"
+        android:key="rog_settings"
+        android:title="@string/title_rog_hero"
+        android:summary="@string/summary_rog_hero"
+        android:icon="@drawable/ic_gamepad" />
 
     <PreferenceCategory
-        android:title="@@string/title_group"
-        android:layout="@layout/preference_category_custom">
-        <Preference
-            android:layout="@layout/preference_custom_head"
-            android:title="@@string/title_gsi_group"
-            android:icon="@drawable/user"
-            android:summary="@string/summary_gsi_group">
-            <intent
-                android:action="android.intent.action.VIEW"
-                android:data="https://t.me/dozeoff_treble" />
-        </Preference>
-    </PreferenceCategory>
-
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
-    <PreferenceCategory
-        android:title="@string/title_device_specific"
+        android:key="category_device"
+        android:title="@string/title_category_device"
         android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="asus_settings"
-            android:title="@string/title_asus"
-            android:icon="@drawable/devices" />
-        <Preference
-            android:layout="@layout/preference_custom_head"
-            android:key="rog_settings"
-            android:title="ROG features"
+            android:title="@string/menu_asus"
+            android:summary="@string/menu_asus_summary"
             android:icon="@drawable/devices" />
         <Preference
             android:layout="@layout/preference_custom_head"
@@ -44,14 +25,15 @@
             android:icon="@drawable/devices" />
         <Preference
             android:layout="@layout/preference_custom_head"
-            android:key="mediatek_settings"
-            android:title="@string/title_mediatek"
-            android:icon="@drawable/devices" />
+            android:key="qualcomm_settings"
+            android:title="@string/menu_qualcomm"
+            android:summary="@string/menu_qualcomm_summary"
+            android:icon="@drawable/ic_chip" />
         <Preference
             android:layout="@layout/preference_custom_head"
-            android:key="qualcomm_settings"
-            android:title="@string/title_qualcomm"
-            android:icon="@drawable/devices" />
+            android:key="mediatek_settings"
+            android:title="@string/title_mediatek"
+            android:icon="@drawable/ic_chip" />
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="oneplus_settings"
@@ -100,129 +82,86 @@
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="doze_settings"
-            android:title="@string/title_doze"
+            android:title="@string/menu_doze"
+            android:summary="@string/menu_doze_summary"
             android:icon="@drawable/doze" />
     </PreferenceCategory>
 
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
     <PreferenceCategory
+        android:key="category_display"
         android:title="@string/title_display"
         android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="display_settings"
-            android:title="@string/title_display_settings"
-            android:summary="@string/summary_display_settings"
-            android:icon="@drawable/display"/>
+            android:title="@string/menu_display"
+            android:summary="@string/menu_display_summary"
+            android:icon="@drawable/display" />
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="ui_settings"
-            android:title="@string/title_ui_settings"
-            android:summary="@string/summary_ui_settings"
-            android:icon="@drawable/ui"/>
+            android:title="@string/menu_ui"
+            android:summary="@string/menu_ui_summary"
+            android:icon="@drawable/ui" />
     </PreferenceCategory>
 
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
     <PreferenceCategory
+        android:key="category_audio"
         android:title="@string/title_audio"
         android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="audio_settings"
-            android:title="@string/title_audio_settings"
-            android:summary="@string/summary_audio_settings"
+            android:title="@string/menu_audio"
+            android:summary="@string/menu_audio_summary"
             android:icon="@drawable/audio" />
-
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="audiofx_settings"
-            android:title="@string/title_audiofx"
-            android:summary="@string/summary_audiofx"
+            android:title="@string/menu_audiofx"
+            android:summary="@string/menu_audiofx_summary"
             android:icon="@drawable/audiofx" />
     </PreferenceCategory>
 
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
     <PreferenceCategory
+        android:key="category_connectivity"
         android:title="@string/title_telephony"
         android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="telephony_settings"
-            android:title="@string/title_telephony_settings"
-            android:summary="@string/summary_telephony"
+            android:title="@string/menu_telephony"
+            android:summary="@string/menu_telephony_summary"
             android:icon="@drawable/telephony" />
-
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="ims_settings"
-            android:title="@string/title_ims_settings"
-            android:summary="@string/summary_ims"
+            android:title="@string/menu_ims"
+            android:summary="@string/menu_ims_summary"
             android:icon="@drawable/ims" />
     </PreferenceCategory>
 
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
     <PreferenceCategory
-        android:title="@string/title_camera"
+        android:key="category_system"
+        android:title="@string/title_category_system"
         android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="camera_settings"
-            android:title="@string/title_camera_settings"
-            android:summary="@string/summary_camera"
+            android:title="@string/menu_camera"
+            android:summary="@string/menu_camera_summary"
             android:icon="@drawable/camera" />
-    </PreferenceCategory>
-
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
-    <PreferenceCategory
-        android:title="@string/title_misc"
-        android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="misc_settings"
-            android:title="@string/title_misc_settings"
-            android:summary="@string/summary_misc"
+            android:title="@string/menu_misc"
+            android:summary="@string/menu_misc_summary"
             android:icon="@drawable/miscellaneous" />
-    </PreferenceCategory>
-
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
-    <PreferenceCategory
-        android:title="@string/title_debugging"
-        android:layout="@layout/preference_category_custom">
         <Preference
             android:layout="@layout/preference_custom_head"
             android:key="debug_settings"
-            android:title="@string/title_debug_settings"
-            android:summary="@string/summary_debug"
+            android:title="@string/menu_debug"
+            android:summary="@string/menu_debug_summary"
             android:icon="@drawable/debug" />
     </PreferenceCategory>
-
-    <Preference
-        android:layout="@layout/preference_space"
-        android:selectable="false"
-        android:enabled="false" />
-
 </PreferenceScreen>

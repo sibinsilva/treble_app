@@ -2,7 +2,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory
-        android:title="AUDIO"
+        android:title="Audio"
         android:layout="@layout/preference_category_custom">
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
@@ -19,7 +19,7 @@
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
             android:key="key_samsung_alternate_audio_policy"
-            android:title="Use alternate audio policy" />
+            android:title="Use alternative audio policy" />
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -54,7 +54,7 @@
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
             android:key="key_samsung_fod_single_click"
-            android:title="FOD Single Click" />
+            android:title="FOD single click" />
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"

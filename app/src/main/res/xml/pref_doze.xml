@@ -19,7 +19,7 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="MOTOROLA" android:key="key_doze_motorola"
+        android:title="Motorola" android:key="key_doze_motorola"
         android:layout="@layout/preference_category_custom">
         <SwitchPreference
             android:defaultValue="false"

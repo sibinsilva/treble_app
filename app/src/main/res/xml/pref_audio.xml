@@ -42,7 +42,7 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="\nBLUETOOTH"
+        android:title="Bluetooth"
         android:layout="@layout/preference_category_custom">
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"

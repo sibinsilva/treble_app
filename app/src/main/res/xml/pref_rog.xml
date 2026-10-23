@@ -13,15 +13,15 @@
              presets yet.
         -->
         <Preference
-            android:layout="@layout/preference_edittext_custom"
+            android:layout="@layout/preference_custom_nav"
             android:key="rog_aura_sync_open"
             android:title="Aura Sync RGB"
-            android:summary="Color, brightness and mode - opens a dedicated screen" />
+            android:summary="Color, brightness and mode" />
         <Preference
-            android:layout="@layout/preference_edittext_custom"
+            android:layout="@layout/preference_custom_nav"
             android:key="rog_aura_lighting_triggers_open"
             android:title="Lighting triggers"
-            android:summary="React to calls, charging, notifications and music - opens a dedicated screen" />
+            android:summary="React to calls, charging, notifications and music" />
     </PreferenceCategory>
     <PreferenceCategory
         android:title="AeroActive Cooler 5"
@@ -106,7 +106,7 @@
         android:title="Dual Wi-Fi &amp; Network Acceleration"
         android:layout="@layout/preference_category_custom">
         <Preference
-            android:layout="@layout/preference_edittext_custom"
+            android:layout="@layout/preference_custom_nav"
             android:key="rog_dual_wifi_open"
             android:title="@string/dual_wifi_title"
             android:summary="@string/dual_wifi_summary" />

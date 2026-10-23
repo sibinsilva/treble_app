@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/TrebleRow">
+
+    <LinearLayout
+        android:id="@+id/card"
+        style="@style/TrebleRowCard">
+
+        <ImageView
+            android:id="@android:id/icon"
+            style="@style/TrebleRowIcon"
+            android:visibility="gone" />
+
+        <LinearLayout style="@style/TrebleRowText">
+            <TextView
+                android:id="@android:id/title"
+                style="@style/TrebleRowTitle" />
+            <TextView
+                android:id="@android:id/summary"
+                style="@style/TrebleRowSummary" />
+        </LinearLayout>
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="?attr/colorOnSurfaceVariant"
+            android:importantForAccessibility="no" />
+    </LinearLayout>
+</FrameLayout>

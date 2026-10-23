@@ -1,20 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/title"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="center_horizontal"
-    android:paddingTop="8dp"
-    android:paddingBottom="2dp"
-    android:orientation="vertical"
-    android:background="?android:attr/windowBackground">
-
-    <TextView
-        android:id="@android:id/title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="?attr/colorSecondary"
-        android:textStyle="bold"
-        android:textSize="14sp"
-        android:gravity="center"
-        android:paddingBottom="8dp" />
-</LinearLayout>
+    android:paddingStart="36dp"
+    android:paddingEnd="36dp"
+    android:paddingTop="24dp"
+    android:paddingBottom="8dp"
+    android:textAppearance="@style/TextAppearance.CustomSummary"
+    android:textSize="14sp"
+    android:textStyle="bold"
+    android:textColor="?attr/colorPrimary" />

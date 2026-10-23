@@ -45,7 +45,7 @@
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
             android:key="key_misc_activity_anim_perf_override"
-            android:title="Activity Anim Perf Override"
+            android:title="Activity animation performance override"
             android:summary="Forces the use of performance optimization in activity animations\nRequires reboot" />
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
@@ -70,12 +70,12 @@
             android:defaultValue="false"
             android:key="key_misc_axion_props"
             android:title="Axion props"
-            android:summary="enable axion props" />
+            android:summary="Enable Axion props" />
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
             android:key="key_misc_scroll_boost"
-            android:title="Scroll Boost"
+            android:title="Scroll boost"
             android:summary="Improves scrolling smoothness by applying a temporary performance boost during scroll gestures. On heavier apps, it may use a more aggressive performance profile depending on vendor support. On low-RAM devices, this may increase memory pressure and reduce smoothness in some situations." />
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
@@ -87,14 +87,14 @@
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
             android:key="key_misc_a2dp_identity"
-            android:title="A2dp Identity address"
+            android:title="A2DP identity address"
             android:summary="Some devices connect over Bluetooth correctly, but fail to expose the A2DP\noutput route to AudioPolicyManager, causing media audio to continue playing\nthrough the phone speaker." />
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
             android:key="key_misc_safe_media"
-            android:title="Safe Media Volume Bypas"
-            android:summary="disable framework safe media volume checks, warnings, and volume clamping." />
+            android:title="Safe media volume bypass"
+            android:summary="Disable framework safe media volume checks, warnings, and volume clamping." />
         <SwitchPreference
             android:layout="@layout/preference_switch_custom"
             android:defaultValue="false"
@@ -104,7 +104,7 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Codec Settings"
+        android:title="Codec settings"
         android:layout="@layout/preference_category_custom">
 
         <Preference
@@ -164,7 +164,7 @@
         android:layout="@layout/preference_switch_custom"
         android:defaultValue="false"
         android:key="key_misc_performance_tweaks"
-        android:title="Performance Tweaks"
+        android:title="Performance tweaks"
         android:summary="⚠️ MAXIMUM PERFORMANCE - Increases battery drain and heat\n\nApplies comprehensive system-wide optimizations:\n\n📊 Dalvik/ART Heap &amp; GC:\n• Heap: 512MB max, 256MB growth limit\n• GC threads: 4 parallel threads\n• Finalizer timeout: 30s\n• Target utilization: 75%\n\n🎨 SurfaceFlinger:\n• Uclamp priorities: 100-1024\n• Buffer management: 4 buffers, 384 layers\n• VSYNC backpressure: enabled\n• GL + HWC backpressure: enabled\n\n💾 I/O &amp; Storage:\n• Scheduler: CFQ (balanced)\n• Read-ahead: 128KB (eMMC), 256KB (SATA)\n• VM dirty ratio: 20%/10%\n• Swappiness: 10 (avoid swap)\n\n🌐 Network:\n• TCP buffers: 16KB-1MB (adaptive per network)\n• Core buffers: 16MB max\n• Socket backlog: 4096 connections\n\n⚙️ CPU/GPU:\n• DEX2OAT threads: 8 parallel\n• Block cache: enabled\n• GPU acceleration: full (EGL + SF)\n\n⚠️ Steps:\n1. Enable this option\n2. REBOOT immediately\n3. Test performance and stability\n\n⚠️ CONFLICT WARNING:\n• Automatically disables LMK Tweaks\n• May cause instability on &lt;4GB RAM\n• Battery drain: +15-25%\n• Heat: noticeably higher\n\nPerformance: ⭐⭐⭐⭐⭐ | Battery: Poor | Heat: High | RAM: 4GB+ recommended\n\n📝 Note: Does NOT include DEXOPT - use 'Aggressive DEXOPT' separately for OAT recompilation." />
     </PreferenceCategory>
 
