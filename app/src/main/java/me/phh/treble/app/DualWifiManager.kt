@@ -208,41 +208,6 @@ class DualWifiManager(private val context: Context) {
     }
 
     // ---------------------------------------------------------------------------
-    // Enable HyperFusion SLA & ASUS Hardware Antenna Mode
-    // ---------------------------------------------------------------------------
-    suspend fun enableHyperFusion(enable: Boolean): Boolean = withContext(Dispatchers.IO) {
-        val value = if (enable) "1" else "0"
-        DualWifiLogger.i(TAG, "Applying ASUS HyperFusion & Qualcomm SLA enabled=$value")
-
-        var ok = false
-
-        val antennaPath = "/sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/do_wifi_antenna_switch"
-        val antRes = RootShell.run("echo '$value' > $antennaPath 2>/dev/null || /vendor/bin/WifiAntenna.sh")
-        DualWifiLogger.d(TAG, "ASUS DBS Antenna switch: exit=${antRes.exitCode}")
-
-        RootShell.run("setprop vendor.asus.netutild.enabled $value")
-
-        val slaPropCmd = "setprop vendor.sla.enabled $value && setprop persist.vendor.sla.enabled $value"
-        val res = RootShell.run(slaPropCmd)
-        DualWifiLogger.d(TAG, "setprop SLA: exit=${res.exitCode}")
-        if (res.isSuccess) ok = true
-
-        if (enable) {
-            RootShell.run("echo 'enable=1' > /proc/sla/config 2>/dev/null")
-            RootShell.run("echo 'rate_on=1' > /proc/sla/config 2>/dev/null")
-            RootShell.run("echo 'ports=80,443' > /proc/sla/config 2>/dev/null")
-            RootShell.run("ip rule add fwmark 0x5a lookup 1027 prio 25000 2>/dev/null")
-            RootShell.run("ip rule add fwmark 0x5c lookup 1028 prio 25000 2>/dev/null")
-        } else {
-            RootShell.run("echo 'enable=0' > /proc/sla/config 2>/dev/null")
-            RootShell.run("ip rule del fwmark 0x5a lookup 1027 prio 25000 2>/dev/null")
-            RootShell.run("ip rule del fwmark 0x5c lookup 1028 prio 25000 2>/dev/null")
-        }
-
-        ok
-    }
-
-    // ---------------------------------------------------------------------------
     // Spawn secondary wlan1 interface (ASUS Stock / Qualcomm WCN6850)
     // ---------------------------------------------------------------------------
     suspend fun spawnWlan1(logger: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
@@ -329,19 +294,13 @@ class DualWifiManager(private val context: Context) {
     // SLA status — reads kernel node and interface traffic statistics
     // ---------------------------------------------------------------------------
     suspend fun getSlaStatus(): SlaInfo = withContext(Dispatchers.IO) {
-        val slaEnabledProp = getSystemProperty("vendor.sla.enabled", "0") == "1"
-
-        val procConfig = RootShell.run("cat /proc/sla/config 2>/dev/null")
-        val isEnabled = slaEnabledProp || procConfig.output.contains("enable=1")
-
-        val psRes = RootShell.run("ps -ef | grep slad 2>/dev/null")
-        val daemonRunning = psRes.output.contains("slad")
-
+        // "SLA" here is our own per-connection traffic split (DualWifiSplitter); the vendor
+        // sla.ko only counts traffic and the stock steering daemons don't exist on the GSI.
+        val active = DualWifiSplitter.isActive
         val w0 = getInterfaceTraffic("wlan0")
         val w1 = getInterfaceTraffic("wlan1")
-
-        DualWifiLogger.v(TAG, "SLA Status: enabled=$isEnabled, daemon=$daemonRunning, w0=$w0, w1=$w1")
-        SlaInfo(isEnabled, daemonRunning, w0, w1)
+        DualWifiLogger.v(TAG, "Split status: active=$active, w0=$w0, w1=$w1")
+        SlaInfo(active, active, w0, w1)
     }
 
     private fun getInterfaceTraffic(iface: String): Long {
@@ -376,7 +335,6 @@ class DualWifiManager(private val context: Context) {
 
         spawnWlan1(logger)
         enableMultiInternetMode(2)
-        enableHyperFusion(true)
 
         RootShell.run("cmd wifi network-suggestions-set-user-approved ${context.packageName} yes")
         RootShell.run("cmd wifi network-suggestions-set-user-approved com.android.shell yes")
@@ -452,9 +410,13 @@ class DualWifiManager(private val context: Context) {
                     DualWifiLogger.i(TAG, "Secondary network callback onAvailable: $network")
                     logger("Secondary network connected: $network")
                 }
+                override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
+                    DualWifiSplitter.setSource(connectivityManager, "wifi", network)
+                }
                 override fun onLost(network: Network) {
                     DualWifiLogger.w(TAG, "Secondary network callback onLost: $network")
                     logger("Secondary network connection lost: $network")
+                    DualWifiSplitter.removeSource(connectivityManager, "wifi")
                 }
                 override fun onUnavailable() {
                     DualWifiLogger.d(TAG, "Secondary network callback onUnavailable")
@@ -496,7 +458,7 @@ class DualWifiManager(private val context: Context) {
         }
 
         RootShell.run("cmd wifi start-scan 2>/dev/null")
-        logger("HyperFusion SLA & Dual Wi-Fi acceleration engaged!")
+        logger("Dual Wi-Fi requested; new app connections are split once wlan1 is up.")
 
         true
     }
@@ -519,7 +481,7 @@ class DualWifiManager(private val context: Context) {
 
         RootShell.run("cmd wifi remove-all-suggestions 2>/dev/null")
         enableMultiInternetMode(0)
-        enableHyperFusion(false)
+        DualWifiSplitter.removeSource(connectivityManager, "wifi")
         RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 disconnect 2>/dev/null")
         logger("Secondary interface disconnected.")
     }
@@ -551,10 +513,11 @@ class DualWifiManager(private val context: Context) {
         val netutilActive = netutilRes.output.contains("netutild")
         sb.appendLine("5. ASUS netutild: ${if (netutilActive) "Running" else "Stopped"}")
 
-        val slaRes = RootShell.run("cat /proc/sla/config 2>/dev/null")
-        sb.appendLine("6. /proc/sla/config: ${if (slaRes.isSuccess) slaRes.output.lines().firstOrNull() else "No access"}")
-        val psRes = RootShell.run("ps -ef | grep slad 2>/dev/null")
-        sb.appendLine("   Qualcomm slad-v2: ${if (psRes.output.contains("slad")) "Running" else "Stopped"}")
+        val targets = DualWifiSplitter.activeTargets
+        sb.appendLine("6. Traffic split: ${if (targets.isEmpty()) "Off" else targets.joinToString {
+            "${it.iface} ${(it.share * 100).toInt()}%" } + " of new app connections (IPv4)"}")
+        val rules = RootShell.run("iptables -w -t mangle -S dw_out 2>/dev/null | grep -c MARK")
+        sb.appendLine("   iptables dw_out rules: ${rules.output.trim().ifEmpty { "0" }}")
 
         val rootRes = RootShell.run("id")
         sb.appendLine("7. Root: exit=${rootRes.exitCode} -> ${rootRes.output.lines().firstOrNull() ?: "no output"}")

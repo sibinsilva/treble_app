@@ -441,6 +441,6 @@
 
     <!-- ROG Dual Wi-Fi & Network Acceleration -->
     <string name="dual_wifi_title">Network Acceleration Hub</string>
-    <string name="dual_wifi_summary">Hardware bonding for Dual Wi-Fi &amp; Mobile Data (Qualcomm DBS/SLA)</string>
+    <string name="dual_wifi_summary">Split connections over two Wi-Fi bands and mobile data</string>
     <string name="hint_password">Wi-Fi Password</string>
 </resources>

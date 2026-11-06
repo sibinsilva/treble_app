@@ -172,7 +172,7 @@ class DualWifiActivity : AppCompatActivity() {
                 tvHyperFusionSubtitle.text = "⚠️ Mobile data is inactive - turn on Mobile Data to bond"
                 tvHyperFusionSubtitle.setTextColor(getColor(android.R.color.holo_orange_light))
             } else {
-                tvHyperFusionSubtitle.text = "Active • Latency bonding with mobile data"
+                tvHyperFusionSubtitle.text = "On • New connections also use mobile data"
                 tvHyperFusionSubtitle.setTextColor(getColor(com.google.android.material.R.color.material_dynamic_neutral_variant70))
             }
         }
@@ -250,11 +250,11 @@ class DualWifiActivity : AppCompatActivity() {
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
-                    tvHyperFusionSubtitle.text = "Active • Latency bonding with mobile data"
+                    tvHyperFusionSubtitle.text = "On • New connections also use mobile data"
                     tvHyperFusionSubtitle.setTextColor(getColor(com.google.android.material.R.color.material_dynamic_neutral_variant70))
                 }
             } else {
-                tvHyperFusionSubtitle.text = "Bond Wi-Fi with 5G/4G cellular data (Qualcomm SLA)"
+                tvHyperFusionSubtitle.text = "Split new connections over Wi-Fi and 5G/4G (uses mobile data)"
                 tvHyperFusionSubtitle.setTextColor(getColor(com.google.android.material.R.color.material_dynamic_neutral_variant70))
             }
             lifecycleScope.launch { refreshStatus() }
@@ -334,9 +334,12 @@ class DualWifiActivity : AppCompatActivity() {
             val summaryMessage = buildString {
                 append("● System Acceleration Health: READY\n\n")
                 append("• Hardware DBS (Wi-Fi 6E): ")
-                append(if (isDualWifiActive) "ACTIVE (Dual-Band Bonded)" else "STANDBY (Hardware Available)").append("\n")
-                append("• HyperFusion (Cellular SLA): ")
-                append(if (isHyperFusionActive) "ACTIVE (Multi-Path Bonding)" else "STANDBY").append("\n\n")
+                val split = DualWifiSplitter.activeTargets
+                append(if (split.any { it.key == "wifi" }) "ACTIVE (connections split over wlan0 + wlan1)"
+                       else if (isDualWifiActive) "REQUESTED (waiting for wlan1)" else "STANDBY (Hardware Available)").append("\n")
+                append("• HyperFusion (Wi-Fi + mobile data): ")
+                append(if (split.any { it.key == "cell" }) "ACTIVE (connections split over Wi-Fi + mobile)"
+                       else if (isHyperFusionActive) "REQUESTED (waiting for mobile data)" else "STANDBY").append("\n\n")
                 append("Detailed Subsystem Diagnostics:\n")
                 append(report)
             }
@@ -543,13 +546,19 @@ class DualWifiActivity : AppCompatActivity() {
             val opName = tm?.networkOperatorName
             if (simReady && !opName.isNullOrBlank()) {
                 tvMobileSsid.text = "$opName (Cellular)"
+                val cellSplit = DualWifiSplitter.activeTargets.firstOrNull { it.key == "cell" }
                 if (isHyperFusionOn) {
-                    if (mobileDataOn) {
-                        tvMobileSub.text = "Bonded with Wi-Fi • SLA Multi-Path Active"
-                        tvMobileBadge.text = "Bonded"
+                    if (mobileDataOn && cellSplit == null) {
+                        tvMobileSub.text = "Bringing up mobile data next to Wi-Fi..."
+                        tvMobileBadge.text = "Starting"
+                        tvMobileBadge.setBackgroundResource(R.drawable.bg_pill_cyan)
+                        tvMobileBadge.setTextColor(getColor(com.google.android.material.R.color.material_dynamic_primary40))
+                    } else if (mobileDataOn) {
+                        tvMobileSub.text = "Sharing ${(cellSplit!!.share * 100).toInt()}% of new connections (${cellSplit.iface})"
+                        tvMobileBadge.text = "Splitting"
                         tvMobileBadge.setBackgroundResource(R.drawable.bg_pill_green)
                         tvMobileBadge.setTextColor(getColor(android.R.color.holo_green_light))
-                        tvHyperFusionSubtitle.text = "Active • Latency bonding with mobile data"
+                        tvHyperFusionSubtitle.text = "On • New connections also use mobile data"
                         tvHyperFusionSubtitle.setTextColor(getColor(com.google.android.material.R.color.material_dynamic_neutral_variant70))
                     } else {
                         tvMobileSub.text = "⚠️ Mobile data is inactive in Settings"
@@ -589,7 +598,7 @@ class DualWifiActivity : AppCompatActivity() {
         tvDbsStatusBadge.text = if (isSecondaryConnected) "● Accelerated" else if (w1.isUp) "● Ready" else "Standby"
         tvDbsStatusBadge.setBackgroundResource(if (isSecondaryConnected) R.drawable.bg_pill_green else R.drawable.bg_pill_cyan)
 
-        val isSlaActive = sla.daemonRunning || isHyperFusionOn
+        val isSlaActive = sla.isEnabled
         tvSlaStatusBadge.text = if (isSlaActive) "● Active" else "Idle"
         tvSlaStatusBadge.setBackgroundResource(if (isSlaActive) R.drawable.bg_pill_green else R.drawable.bg_pill_cyan)
 
@@ -606,8 +615,10 @@ class DualWifiActivity : AppCompatActivity() {
         }
 
         // Update Advanced Diagnostics monospace text
-        tvAdvancedStats.text = "Kernel Node: /proc/sla/config (${if (sla.isEnabled || isHyperFusionOn) "enable=1" else "idle"})\n" +
-                "Daemon: ${if (sla.daemonRunning) "slad-v2 (Active)" else "Stopped"}\n" +
+        val splitTargets = DualWifiSplitter.activeTargets
+        tvAdvancedStats.text = "Traffic split (IPv4, new app connections): " +
+                (if (splitTargets.isEmpty()) "off" else splitTargets.joinToString {
+                    "${it.iface} ${(it.share * 100).toInt()}%" }) + "\n" +
                 "wlan0 Traffic: $totalWlan0 | wlan1 Traffic: $totalWlan1"
     }
 

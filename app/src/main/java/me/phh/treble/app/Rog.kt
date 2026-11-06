@@ -74,6 +74,8 @@ import java.util.Locale
 object Rog: EntryStartup {
     private var appCtxt: Context? = null
     private var activeSecondaryNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private var cellularNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private var defaultNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private const val COOLER_BASE = "/sys/class/leds/aura_inbox"
     private const val AURA_PHONE_BASE = "/sys/class/leds/aura_sync"
     private const val AURA_SIDE_BASE = "/sys/class/leds/aura_sync_side"
@@ -275,6 +277,7 @@ object Rog: EntryStartup {
                     try { cm.unregisterNetworkCallback(it) } catch (_: Throwable) {}
                     activeSecondaryNetworkCallback = null
                 }
+                DualWifiSplitter.removeSource(cm, "wifi")
 
                 if (mode > 0) {
                     try {
@@ -304,8 +307,13 @@ object Rog: EntryStartup {
                             override fun onAvailable(network: Network) {
                                 Log.i("PHH", "Rog: Multi-Internet secondary network connected: $network")
                             }
+                            override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
+                                // Interface name and addresses are known here; split traffic onto it.
+                                DualWifiSplitter.setSource(cm, "wifi", network)
+                            }
                             override fun onLost(network: Network) {
                                 Log.w("PHH", "Rog: Multi-Internet secondary network lost: $network")
+                                DualWifiSplitter.removeSource(cm, "wifi")
                             }
                         }
                         activeSecondaryNetworkCallback = callback
@@ -319,41 +327,69 @@ object Rog: EntryStartup {
         }
     }
 
+    // HyperFusion: keep cellular up next to Wi-Fi and split new app connections onto it.
+    // (Stock ASUS did this with closed Qualcomm/ASUS daemons; sla.ko itself only counts traffic.)
     private fun applyHyperFusion(sp: SharedPreferences) {
         val on = sp.getBoolean(RogSettings.hyperFusion, false)
-        val value = if (on) "1" else "0"
-        Log.d("PHH", "Rog: applying HyperFusion SLA enabled=$value")
+        Log.d("PHH", "Rog: applying HyperFusion enabled=$on")
+        val ctxt = appCtxt ?: return
+        val cm = ctxt.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return
 
-        Misc.safeSetprop("vendor.sla.enabled", value)
-        Misc.safeSetprop("persist.vendor.sla.enabled", value)
-
-        if (on) {
-            writeToFileNofail("/proc/sla/config", "1")
-            writeToFileNofail("/proc/sla/config", "ports=80,443")
-            writeToFileNofail("/proc/sla/config", "rate_on=1")
-            writeToFileNofail("/proc/sla/config", "max_size=4096")
-        } else {
-            writeToFileNofail("/proc/sla/config", "0")
+        cellularNetworkCallback?.let {
+            try { cm.unregisterNetworkCallback(it) } catch (_: Throwable) {}
+            cellularNetworkCallback = null
         }
+        DualWifiSplitter.removeSource(cm, "cell")
+        if (!on) return
 
-        kotlin.concurrent.thread {
-            val cmdStr = if (on) {
-                "setprop vendor.sla.enabled 1 && setprop persist.vendor.sla.enabled 1 && start slad-v2 && start netutild_V1.1"
-            } else {
-                "setprop vendor.sla.enabled 0 && setprop persist.vendor.sla.enabled 0 && stop slad-v2 && stop netutild_V1.1"
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
+                Log.i("PHH", "Rog: HyperFusion cellular network up: $network (${lp.interfaceName})")
+                DualWifiSplitter.setSource(cm, "cell", network)
             }
-            val cmds = listOf(
-                arrayOf("su", "-c", cmdStr),
-                arrayOf("phh-su", "-c", cmdStr)
-            )
-            for (cmd in cmds) {
-                try {
-                    Runtime.getRuntime().exec(cmd).waitFor()
-                    break
-                } catch (t: Throwable) {
-                    Log.d("PHH", "Rog: failed exec " + cmd.joinToString(" "), t)
-                }
+            override fun onLost(network: Network) {
+                Log.w("PHH", "Rog: HyperFusion cellular network lost: $network")
+                DualWifiSplitter.removeSource(cm, "cell")
             }
+        }
+        cellularNetworkCallback = callback
+        try {
+            cm.requestNetwork(request, callback)
+        } catch (t: Throwable) {
+            Log.w("PHH", "Rog: HyperFusion cellular requestNetwork failed", t)
+            cellularNetworkCallback = null
+        }
+    }
+
+    // The split rules are keyed on the default network's netId, so follow it.
+    private fun trackDefaultNetwork(ctxt: Context) {
+        if (defaultNetworkCallback != null) return
+        val cm = ctxt.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                DualWifiSplitter.setDefaultNetwork(cm, network)
+            }
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                // Bandwidth estimates feed the split shares.
+                DualWifiSplitter.reapply(cm)
+            }
+            override fun onLost(network: Network) {
+                DualWifiSplitter.setDefaultNetwork(cm, null)
+            }
+        }
+        defaultNetworkCallback = callback
+        try {
+            cm.registerDefaultNetworkCallback(callback)
+        } catch (t: Throwable) {
+            Log.w("PHH", "Rog: registerDefaultNetworkCallback failed", t)
+            defaultNetworkCallback = null
         }
     }
 
@@ -404,6 +440,7 @@ object Rog: EntryStartup {
         applyEdgeReject(sp)
         applyCharging(sp)
         applyBypassCharging(sp)
+        trackDefaultNetwork(ctxt)
         applyDualWifi(sp)
         applyHyperFusion(sp)
     }
