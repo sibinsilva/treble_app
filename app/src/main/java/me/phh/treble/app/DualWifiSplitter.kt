@@ -22,10 +22,7 @@ import java.util.concurrent.Executors
  */
 object DualWifiSplitter {
     private const val TAG = "DualWifi_Splitter"
-    private const val MANGLE_CHAIN = "dw_out"
-    private const val NAT_CHAIN = "dw_post"
-    private const val EXPLICIT_BIT = 0x10000
-    private const val APP_UIDS = "10000-99999"
+    private const val SPLIT_PROP = "sys.phh.dualwifi.split"
 
     data class Target(val key: String, val netId: Int, val iface: String, val share: Double)
 
@@ -113,53 +110,28 @@ object DualWifiSplitter {
         executor.execute { writeRules(0, emptyList()) }
     }
 
-    private fun hex(v: Int) = "0x" + Integer.toHexString(v)
-
+    // TrebleApp runs as the system uid and can't use su (KernelSU hides it), so the rules
+    // are applied as root by /system/bin/dualwifi.sh, started by init on this property.
     private fun writeRules(defaultNetId: Int, targets: List<Target>) {
-        val cmds = mutableListOf<String>()
-        // Tear down any previous state (also cleans up after a crash).
-        cmds += "while iptables -w -t mangle -D OUTPUT -j $MANGLE_CHAIN 2>/dev/null; do :; done"
-        cmds += "iptables -w -t mangle -F $MANGLE_CHAIN 2>/dev/null"
-        cmds += "iptables -w -t mangle -X $MANGLE_CHAIN 2>/dev/null"
-        cmds += "while iptables -w -t nat -D POSTROUTING -j $NAT_CHAIN 2>/dev/null; do :; done"
-        cmds += "iptables -w -t nat -F $NAT_CHAIN 2>/dev/null"
-        cmds += "iptables -w -t nat -X $NAT_CHAIN 2>/dev/null"
-
-        if (defaultNetId != 0 && targets.isNotEmpty()) {
-            cmds += "iptables -w -t mangle -N $MANGLE_CHAIN"
-            cmds += "iptables -w -t nat -N $NAT_CHAIN"
-            // Later packets of a moved connection: restore the target mark from conntrack.
-            for (t in targets) {
-                cmds += "iptables -w -t mangle -A $MANGLE_CHAIN -m conntrack ! --ctstate NEW" +
-                        " -m connmark --mark ${hex(t.netId)}/0xffff" +
-                        " -j MARK --set-xmark ${hex(t.netId or EXPLICIT_BIT)}/0x1ffff"
-            }
-            // New connections: pick a target. Each rule only sees what earlier rules left
-            // on the default network, so scale its probability accordingly.
+        val value = if (defaultNetId == 0 || targets.isEmpty()) {
+            "off"
+        } else {
+            // Each rule only sees what earlier rules left on the default network,
+            // so scale its probability accordingly.
             var remaining = 1.0
-            for (t in targets) {
+            defaultNetId.toString() + targets.joinToString("") { t ->
                 val p = (t.share / remaining).coerceIn(0.0, 1.0)
                 remaining -= t.share
-                cmds += "iptables -w -t mangle -A $MANGLE_CHAIN -m conntrack --ctstate NEW" +
-                        " -m owner --uid-owner $APP_UIDS -m mark --mark ${hex(defaultNetId)}/0xffff" +
-                        " -m statistic --mode random --probability ${String.format(Locale.US, "%.4f", p)}" +
-                        " -j MARK --set-xmark ${hex(t.netId or EXPLICIT_BIT)}/0x1ffff"
-                cmds += "iptables -w -t nat -A $NAT_CHAIN -o ${t.iface}" +
-                        " -m connmark --mark ${hex(t.netId)}/0xffff -j MASQUERADE"
+                ";${t.netId},${t.iface},${String.format(Locale.US, "%.4f", p)}"
             }
-            cmds += "iptables -w -t mangle -I OUTPUT 1 -j $MANGLE_CHAIN"
-            cmds += "iptables -w -t nat -I POSTROUTING 1 -j $NAT_CHAIN"
         }
-
-        val res = RootShell.run(cmds.joinToString("; "))
+        Misc.safeSetprop(SPLIT_PROP, value)
         if (targets.isEmpty()) {
-            DualWifiLogger.i(TAG, "Traffic split off (exit=${res.exitCode})")
+            DualWifiLogger.i(TAG, "Traffic split off")
         } else {
             DualWifiLogger.i(TAG, "Traffic split on: default netId=$defaultNetId, " +
                     targets.joinToString { "${it.key}=${it.iface}/netId ${it.netId} " +
-                            String.format(Locale.US, "%.0f%%", it.share * 100) } +
-                    " (exit=${res.exitCode})")
-            if (!res.isSuccess) DualWifiLogger.w(TAG, "iptables output: ${res.output}")
+                            String.format(Locale.US, "%.0f%%", it.share * 100) } + " ($SPLIT_PROP=$value)")
         }
     }
 }

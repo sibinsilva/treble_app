@@ -237,35 +237,9 @@ object Rog: EntryStartup {
             writeToFileNofail("/sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/do_wifi_antenna_switch", "0")
         }
 
-        kotlin.concurrent.thread {
-            val cmdStr = if (mode > 0) {
-                listOf(
-                    "ip link show wifi-aware0 >/dev/null 2>&1 && ip link set dev wifi-aware0 name wlan1",
-                    "ip link set dev wlan1 up",
-                    "service call wifinl80211 2 s16 'wlan1'",
-                    "cmd wifi force-overlay-config-value bool config_wifiMultiStaMultiInternetConcurrencyEnabled enabled true",
-                    "cmd wifi force-overlay-config-value bool config_wifiMultiStaLocalOnlyConcurrencyEnabled enabled true",
-                    "cmd wifi force-overlay-config-value bool config_wifiMultiStaRestrictedConcurrencyEnabled enabled true",
-                    "cmd wifi force-overlay-config-value bool config_wifiMultiStaNetworkSwitchingMakeBeforeBreakEnabled enabled true",
-                    "cmd wifi set-multi-internet-mode $mode",
-                    "cmd wifi set-network-selection-config disabled disabled -a 2"
-                ).joinToString(" && ")
-            } else {
-                "cmd wifi set-multi-internet-mode 0"
-            }
-            val cmds = listOf(
-                arrayOf("su", "-c", cmdStr),
-                arrayOf("phh-su", "-c", cmdStr)
-            )
-            for (cmd in cmds) {
-                try {
-                    Runtime.getRuntime().exec(cmd).waitFor()
-                    break
-                } catch (t: Throwable) {
-                    Log.d("PHH", "Rog: failed exec " + cmd.joinToString(" "), t)
-                }
-            }
-        }
+        // Multi-STA configs + multi-internet mode, applied as root by /system/bin/dualwifi.sh
+        // (TrebleApp can't use su under KernelSU).
+        Misc.safeSetprop("sys.phh.dualwifi.multista", mode.toString())
 
         Misc.safeSetprop("persist.sys.rog.dual_wifi_mode", mode.toString())
 

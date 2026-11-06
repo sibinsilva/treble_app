@@ -191,18 +191,9 @@ class DualWifiManager(private val context: Context) {
             DualWifiLogger.w(TAG, "Settings.Global write failed: ${t.message}")
         }
 
-        if (mode > 0) {
-            RootShell.run("cmd wifi force-overlay-config-value bool config_wifiMultiStaMultiInternetConcurrencyEnabled enabled true")
-            RootShell.run("cmd wifi force-overlay-config-value bool config_wifiMultiStaLocalOnlyConcurrencyEnabled enabled true")
-            RootShell.run("cmd wifi force-overlay-config-value bool config_wifiMultiStaRestrictedConcurrencyEnabled enabled true")
-            RootShell.run("cmd wifi force-overlay-config-value bool config_wifiMultiStaNetworkSwitchingMakeBeforeBreakEnabled enabled true")
-            RootShell.run("cmd wifi set-multi-internet-mode $mode")
-            RootShell.run("cmd wifi set-network-selection-config disabled disabled -a 2")
-            RootShell.run("setprop persist.sys.rog.dual_wifi_mode $mode")
-        } else {
-            RootShell.run("cmd wifi set-multi-internet-mode 0")
-            RootShell.run("setprop persist.sys.rog.dual_wifi_mode 0")
-        }
+        // Applied as root by /system/bin/dualwifi.sh (TrebleApp can't use su under KernelSU).
+        Misc.safeSetprop("sys.phh.dualwifi.multista", mode.toString())
+        Misc.safeSetprop("persist.sys.rog.dual_wifi_mode", mode.toString())
 
         ok
     }
@@ -266,22 +257,21 @@ class DualWifiManager(private val context: Context) {
             DualWifiLogger.v(TAG, "Status [wlan0]: up=$isUp, ip=$ip, ssid=$ssid, freq=${freq}MHz")
             InterfaceInfo(iface, isUp, ip?.takeIf { isUp }, ssid, freq)
         } else {
-            val linkRes = RootShell.run("ip -br link show $iface 2>/dev/null")
-            val isUp = linkRes.output.contains("UP")
-            val addrRes = RootShell.run("ip -br addr show $iface 2>/dev/null")
-            val ip = Regex("""(\d+\.\d+\.\d+\.\d+)""").find(addrRes.output)?.value
-
-            var ssid: String? = null
-            var freq = 0
-            val wpaRes = RootShell.run("wpa_cli -p $SOCKET_PATH -i $iface status 2>/dev/null")
-            if (wpaRes.isSuccess) {
-                for (line in wpaRes.output.lines()) {
-                    if (line.startsWith("ssid=")) ssid = line.removePrefix("ssid=").trim('"')
-                    if (line.startsWith("freq=")) freq = line.removePrefix("freq=").toIntOrNull() ?: 0
-                }
+            // No root: find the network on this interface through ConnectivityManager.
+            var info = InterfaceInfo(iface, false, null)
+            for (n in connectivityManager.allNetworks) {
+                val lp = connectivityManager.getLinkProperties(n) ?: continue
+                if (lp.interfaceName != iface) continue
+                val ip = lp.linkAddresses.firstOrNull { it.address is java.net.Inet4Address }
+                    ?.address?.hostAddress
+                val wi = connectivityManager.getNetworkCapabilities(n)?.transportInfo
+                        as? android.net.wifi.WifiInfo
+                val ssid = wi?.ssid?.trim('"')?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
+                info = InterfaceInfo(iface, true, ip, ssid, wi?.frequency ?: 0)
+                break
             }
-            DualWifiLogger.v(TAG, "Status [$iface]: up=$isUp, ip=${ip ?: "none"}, ssid=${ssid ?: "none"}, freq=${freq}MHz")
-            InterfaceInfo(iface, isUp, ip, ssid, freq)
+            DualWifiLogger.v(TAG, "Status [$iface]: up=${info.isUp}, ip=${info.ip ?: "none"}, ssid=${info.ssid ?: "none"}, freq=${info.freq}MHz")
+            info
         }
     }
 
@@ -321,8 +311,11 @@ class DualWifiManager(private val context: Context) {
             }
         } catch (_: Exception) {}
 
-        val rx = RootShell.run("cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null").output.trim().toLongOrNull() ?: 0L
-        val tx = RootShell.run("cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null").output.trim().toLongOrNull() ?: 0L
+        fun stat(name: String) = try {
+            java.io.File("/sys/class/net/$iface/statistics/$name").readText().trim().toLong()
+        } catch (_: Exception) { 0L }
+        val rx = stat("rx_bytes")
+        val tx = stat("tx_bytes")
         return rx + tx
     }
 
@@ -333,18 +326,25 @@ class DualWifiManager(private val context: Context) {
         DualWifiLogger.i(TAG, "Connecting secondary to '$ssid' via Multi-Internet & STA+STA Concurrency...")
         logger("Initializing ASUS DBS Antenna & Multi-Internet overlays...")
 
-        spawnWlan1(logger)
         enableMultiInternetMode(2)
 
-        RootShell.run("cmd wifi network-suggestions-set-user-approved ${context.packageName} yes")
-        RootShell.run("cmd wifi network-suggestions-set-user-approved com.android.shell yes")
-
-        if (psk.isNotEmpty()) {
-            RootShell.run("cmd wifi add-network '$ssid' wpa2 '$psk'")
-            RootShell.run("cmd wifi add-suggestion '$ssid' wpa2 '$psk' -s")
-        } else {
-            RootShell.run("cmd wifi add-network '$ssid' open")
-            RootShell.run("cmd wifi add-suggestion '$ssid' open -s")
+        // The framework's multi-internet path connects wlan1 to a saved network on the other
+        // band, so save it (system app API; no root needed).
+        try {
+            @Suppress("DEPRECATION")
+            val conf = android.net.wifi.WifiConfiguration().apply {
+                SSID = "\"$ssid\""
+                if (psk.isNotEmpty()) {
+                    preSharedKey = "\"$psk\""
+                } else {
+                    setSecurityParams(android.net.wifi.WifiConfiguration.SECURITY_TYPE_OPEN)
+                }
+            }
+            @Suppress("DEPRECATION")
+            val id = wifiManager.addNetwork(conf)
+            DualWifiLogger.i(TAG, "Saved '$ssid' as Wi-Fi network id=$id")
+        } catch (t: Throwable) {
+            DualWifiLogger.w(TAG, "addNetwork failed: ${t.message}")
         }
 
         try {
@@ -431,33 +431,8 @@ class DualWifiManager(private val context: Context) {
             DualWifiLogger.w(TAG, "ConnectivityManager requestNetwork warning: ${t.message}")
         }
 
-        val addRes = RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 add_network 2>/dev/null")
-        val netId = addRes.output.trim().toIntOrNull()
-        if (netId != null) {
-            DualWifiLogger.d(TAG, "wlan1 wpa_cli path available, network id=$netId")
-            logger("wpa_cli path: configuring network $netId on wlan1...")
-            RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 set_network $netId ssid '\"$ssid\"'")
-            if (psk.isNotEmpty()) {
-                RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 set_network $netId psk '\"$psk\"'")
-            } else {
-                RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 set_network $netId key_mgmt NONE")
-            }
-            RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 enable_network $netId")
-            RootShell.run("ip link set dev wlan1 up 2>/dev/null")
-            logger("wlan1 authentication requested...")
-
-            for (i in 1..6) {
-                delay(1000)
-                val stat = RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 status")
-                if (stat.output.contains("wpa_state=COMPLETED")) {
-                    logger("wlan1 associated!")
-                    RootShell.run("dhcptool wlan1 || udhcpc -i wlan1 -n -q || dhclient wlan1")
-                    break
-                }
-            }
-        }
-
-        RootShell.run("cmd wifi start-scan 2>/dev/null")
+        @Suppress("DEPRECATION")
+        wifiManager.startScan()
         logger("Dual Wi-Fi requested; new app connections are split once wlan1 is up.")
 
         true
@@ -516,8 +491,7 @@ class DualWifiManager(private val context: Context) {
         val targets = DualWifiSplitter.activeTargets
         sb.appendLine("6. Traffic split: ${if (targets.isEmpty()) "Off" else targets.joinToString {
             "${it.iface} ${(it.share * 100).toInt()}%" } + " of new app connections (IPv4)"}")
-        val rules = RootShell.run("iptables -w -t mangle -S dw_out 2>/dev/null | grep -c MARK")
-        sb.appendLine("   iptables dw_out rules: ${rules.output.trim().ifEmpty { "0" }}")
+        sb.appendLine("   sys.phh.dualwifi.split = ${getSystemProperty("sys.phh.dualwifi.split", "(unset)")}")
 
         val rootRes = RootShell.run("id")
         sb.appendLine("7. Root: exit=${rootRes.exitCode} -> ${rootRes.output.lines().firstOrNull() ?: "no output"}")
