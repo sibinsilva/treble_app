@@ -9,7 +9,6 @@ import android.net.NetworkSpecifier
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
-import android.net.wifi.WifiNetworkSuggestion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -348,19 +347,16 @@ class DualWifiManager(private val context: Context) {
             DualWifiLogger.w(TAG, "addNetwork failed: ${t.message}")
         }
 
+        // Don't also add a WifiNetworkSuggestion for this SSID. The suggestion shadows the
+        // saved network above, and on Android 17 NetworkSuggestionNominator then fails to
+        // resolve it ("Cannot find network with configKey ..."), so the multi-internet
+        // selector finds no secondary candidate and wlan1 never comes up. Clear any
+        // suggestion left behind by older versions of this app.
         try {
-            val suggestionBuilder = WifiNetworkSuggestion.Builder()
-                .setSsid(ssid)
-                .setIsInitialAutojoinEnabled(true)
-            if (psk.isNotEmpty()) {
-                suggestionBuilder.setWpa2Passphrase(psk)
-            }
-            val suggestionList = listOf(suggestionBuilder.build())
-            val status = wifiManager.addNetworkSuggestions(suggestionList)
-            DualWifiLogger.i(TAG, "WifiManager.addNetworkSuggestions status=$status")
-            logger("Network suggestion registered (status=$status)")
+            val status = wifiManager.removeNetworkSuggestions(emptyList())
+            DualWifiLogger.i(TAG, "Cleared old network suggestions (status=$status)")
         } catch (t: Throwable) {
-            DualWifiLogger.w(TAG, "addNetworkSuggestions warning: ${t.message}")
+            DualWifiLogger.w(TAG, "removeNetworkSuggestions warning: ${t.message}")
         }
 
         try {
