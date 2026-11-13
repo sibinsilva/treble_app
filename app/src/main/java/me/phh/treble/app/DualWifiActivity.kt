@@ -193,12 +193,9 @@ class DualWifiActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val rootOk = RootShell.isRootAvailable()
             if (!rootOk) {
-                DualWifiLogger.e(TAG, "Superuser access not available! Commands may fail.")
-                Toast.makeText(
-                    this@DualWifiActivity,
-                    "Warning: Superuser permission not detected. Please verify KernelSU / Magisk grant.",
-                    Toast.LENGTH_LONG
-                ).show()
+                // Expected under KernelSU: the root-side work runs from init
+                // (dualwifi.rc / rog-features.rc), so there's nothing to warn about.
+                DualWifiLogger.i(TAG, "No su for the app; root-side work runs from init.")
             } else {
                 DualWifiLogger.i(TAG, "Superuser access verified and active.")
             }
