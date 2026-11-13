@@ -17,7 +17,6 @@ class DualWifiManager(private val context: Context) {
 
     companion object {
         private const val TAG = "DualWifi_Manager"
-        private const val SOCKET_PATH = "/data/vendor/wifi/wpa/sockets"
 
         fun getSystemProperty(key: String, default: String = ""): String {
             return try {
@@ -132,26 +131,6 @@ class DualWifiManager(private val context: Context) {
             DualWifiLogger.v(TAG, "  Found: '$ssid' ${sr.frequency}MHz ${sr.level}dBm")
         }
 
-        val wpaRes = RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan0 scan_results")
-        if (wpaRes.isSuccess && wpaRes.output.contains("\t")) {
-            var wpaExtra = 0
-            for (line in wpaRes.output.lines()) {
-                val parts = line.split("\t")
-                if (parts.size >= 5) {
-                    val bssid = parts[0].trim()
-                    val freq = parts[1].trim().toIntOrNull() ?: 0
-                    val level = parts[2].trim().toIntOrNull() ?: 0
-                    val flags = parts[3].trim()
-                    val ssid = parts[4].trim()
-                    if (ssid.isNotEmpty() && networks.none { it.bssid == bssid }) {
-                        networks.add(ScannedNetwork(ssid, bssid, freq, level, flags))
-                        wpaExtra++
-                    }
-                }
-            }
-            if (wpaExtra > 0) DualWifiLogger.d(TAG, "wpa_cli added $wpaExtra extra networks not in framework cache")
-        }
-
         val deduped = networks
             .distinctBy { "${it.ssid}_${it.is5GHz}" }
             .sortedWith(compareByDescending<ScannedNetwork> { it.is5GHz }.thenByDescending { it.level })
@@ -208,40 +187,82 @@ class DualWifiManager(private val context: Context) {
         Misc.safeSetprop("sys.phh.rog.antenna", "1")
         Misc.safeSetprop("sys.phh.rog.netutild", "1")
 
-        val check = RootShell.run("ip link show wlan1 2>/dev/null")
-        var exists = check.isSuccess && !check.output.contains("does not exist") && check.output.isNotEmpty()
+        // The framework's multi-internet mode creates and binds the secondary STA itself
+        // once there's a usable network on the other band; just report whether it exists.
+        val exists = try {
+            java.net.NetworkInterface.getByName("wlan1") != null
+        } catch (_: Exception) { false }
+        logger(if (exists) "Secondary STA interface (wlan1) is present." else
+            "Multi-STA ready: wlan1 is created when the second network connects.")
+        exists
+    }
 
-        if (!exists) {
-            val awareCheck = RootShell.run("ip link show wifi-aware0 2>/dev/null")
-            if (awareCheck.isSuccess && awareCheck.output.contains("wifi-aware0")) {
-                DualWifiLogger.i(TAG, "Reallocating secondary RF chain from wifi-aware0 to wlan1")
-                RootShell.run("ip link set dev wifi-aware0 name wlan1 2>/dev/null")
-                exists = true
-            }
+    // ---------------------------------------------------------------------------
+    // Why the secondary link isn't up, phrased as a suggestion for the user
+    // ---------------------------------------------------------------------------
+    data class SecondaryHint(
+        val message: String,
+        /** Saved network id that can be re-enabled to fix this, if any. */
+        val enableNetworkId: Int? = null,
+        val enableSsid: String? = null,
+    )
+
+    private fun selectionEnabled(conf: android.net.wifi.WifiConfiguration): Boolean = try {
+        val status = conf.javaClass.getMethod("getNetworkSelectionStatus").invoke(conf)
+        status.javaClass.getMethod("isNetworkEnabled").invoke(status) as Boolean
+    } catch (_: Throwable) {
+        @Suppress("DEPRECATION")
+        conf.status != android.net.wifi.WifiConfiguration.Status.DISABLED
+    }
+
+    /**
+     * Returns a suggestion when the secondary link can't come up for a reason the user can fix:
+     * no primary connection, no saved network on the other band in range, or the only such
+     * network disabled by Android (for example restored from a backup but never joined).
+     * Returns null when nothing user-fixable was found.
+     */
+    fun diagnoseSecondary(): SecondaryHint? {
+        val primary = @Suppress("DEPRECATION") wifiManager.connectionInfo
+        val primaryFreq = primary?.frequency ?: 0
+        if (primary == null || primary.networkId == -1 || primaryFreq <= 0) {
+            return SecondaryHint("Connect to a Wi-Fi network first; the second link joins another band.")
         }
+        val primaryIs5 = primaryFreq > 4000
+        val otherBand = if (primaryIs5) "2.4 GHz" else "5 GHz"
+        val primaryBssid = primary.bssid
 
-        if (exists) {
-            DualWifiLogger.i(TAG, "wlan1 interface is present, bringing UP")
-            RootShell.run("ip link set dev wlan1 up 2>/dev/null")
-            logger("Secondary STA interface (wlan1) is active!")
-            return@withContext true
+        val scans = (wifiManager.scanResults ?: emptyList()).filter {
+            (it.frequency > 4000) != primaryIs5 && it.BSSID != primaryBssid && !it.SSID.isNullOrEmpty()
         }
-
-        DualWifiLogger.d(TAG, "Requesting additional STA interface from Wi-Fi framework...")
-        RootShell.run("service call wifinl80211 2 s16 'wlan1' 2>/dev/null")
-        RootShell.run("cmd wifi start-scan 2>/dev/null")
-
-        val checkAfter = RootShell.run("ip link show wlan1 2>/dev/null")
-        val success = checkAfter.isSuccess && !checkAfter.output.contains("does not exist") && checkAfter.output.isNotEmpty()
-        if (success) {
-            DualWifiLogger.i(TAG, "wlan1 successfully spawned, bringing UP")
-            RootShell.run("ip link set dev wlan1 up 2>/dev/null")
-            logger("wlan1 created and activated successfully!")
-        } else {
-            DualWifiLogger.d(TAG, "wlan1 will be dynamically bound upon network association")
-            logger("Multi-STA ready: Dynamic binding active.")
+        if (scans.isEmpty()) {
+            return SecondaryHint("No $otherBand networks in range. Dual Wi-Fi needs one network on each band.")
         }
-        success
+        @Suppress("DEPRECATION")
+        val saved = try { wifiManager.configuredNetworks ?: emptyList() } catch (_: Throwable) { emptyList() }
+        val inRange = saved.filter { conf ->
+            val ssid = conf.SSID?.trim('"') ?: return@filter false
+            conf.networkId != primary.networkId && scans.any { it.SSID == ssid }
+        }
+        if (inRange.isEmpty()) {
+            return SecondaryHint("No saved $otherBand network in range. Use \"Select network\" to pick one and enter its password.")
+        }
+        if (inRange.none { selectionEnabled(it) }) {
+            val conf = inRange.first()
+            val ssid = conf.SSID.trim('"')
+            return SecondaryHint(
+                "Saved $otherBand network \"$ssid\" is disabled by Android, so it can't be the second link. Enable it?",
+                conf.networkId, ssid)
+        }
+        return null
+    }
+
+    /** Re-enables a saved network without switching the primary connection to it. */
+    fun enableSavedNetwork(networkId: Int): Boolean = try {
+        @Suppress("DEPRECATION")
+        wifiManager.enableNetwork(networkId, false)
+    } catch (t: Throwable) {
+        DualWifiLogger.w(TAG, "enableNetwork($networkId) failed: ${t.message}")
+        false
     }
 
     // ---------------------------------------------------------------------------
@@ -451,10 +472,8 @@ class DualWifiManager(private val context: Context) {
             wifiManager.removeNetworkSuggestions(emptyList())
         } catch (_: Exception) {}
 
-        RootShell.run("cmd wifi remove-all-suggestions 2>/dev/null")
         enableMultiInternetMode(0)
         DualWifiSplitter.removeSource(connectivityManager, "wifi")
-        RootShell.run("wpa_cli -p $SOCKET_PATH -i wlan1 disconnect 2>/dev/null")
         logger("Secondary interface disconnected.")
     }
 
@@ -492,13 +511,14 @@ class DualWifiManager(private val context: Context) {
             "${it.iface} ${(it.share * 100).toInt()}%" } + " of new app connections (IPv4)"}")
         sb.appendLine("   sys.phh.dualwifi.split = ${getSystemProperty("sys.phh.dualwifi.split", "(unset)")}")
 
-        val rootRes = RootShell.run("id")
-        sb.appendLine("7. Root: exit=${rootRes.exitCode} -> ${rootRes.output.lines().firstOrNull() ?: "no output"}")
+        val w1Up = try {
+            java.net.NetworkInterface.getByName("wlan1")?.isUp == true
+        } catch (_: Exception) { false }
+        sb.appendLine("7. Secondary hint: ${diagnoseSecondary()?.message ?: "none"}")
 
-        val w1Res = RootShell.run("ip -br link show wlan1 2>/dev/null")
         val w0Traffic = getInterfaceTraffic("wlan0")
         val w1Traffic = getInterfaceTraffic("wlan1")
-        sb.appendLine("8. wlan1 Link: ${if (w1Res.isSuccess && w1Res.output.isNotEmpty()) w1Res.output.trim() else "Dynamic (Multi-STA Ready)"}")
+        sb.appendLine("8. wlan1 Link: ${if (w1Up) "up" else "not created yet"}")
         sb.appendLine("   Traffic: wlan0 = ${w0Traffic / 1024} KB | wlan1 = ${w1Traffic / 1024} KB")
 
         val report = sb.toString().trim()

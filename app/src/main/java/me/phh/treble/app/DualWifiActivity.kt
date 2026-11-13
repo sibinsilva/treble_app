@@ -32,6 +32,8 @@ class DualWifiActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: DualWifiManager
     private var pollJob: Job? = null
+    // Saved networks we already offered to re-enable, so the dialog isn't repeated.
+    private val offeredEnable = mutableSetOf<Int>()
 
     private val prefs by lazy { getSharedPreferences("dual_wifi_prefs", Context.MODE_PRIVATE) }
     private val defaultSp by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
@@ -88,7 +90,6 @@ class DualWifiActivity : AppCompatActivity() {
         setupUI()
         setupListeners()
         observeLogs()
-        checkRootAccess()
     }
 
     private fun bindViews() {
@@ -186,19 +187,6 @@ class DualWifiActivity : AppCompatActivity() {
             tmData ?: settingOn
         } catch (_: Throwable) {
             false
-        }
-    }
-
-    private fun checkRootAccess() {
-        lifecycleScope.launch {
-            val rootOk = RootShell.isRootAvailable()
-            if (!rootOk) {
-                // Expected under KernelSU: the root-side work runs from init
-                // (dualwifi.rc / rog-features.rc), so there's nothing to warn about.
-                DualWifiLogger.i(TAG, "No su for the app; root-side work runs from init.")
-            } else {
-                DualWifiLogger.i(TAG, "Superuser access verified and active.")
-            }
         }
     }
 
@@ -476,10 +464,11 @@ class DualWifiActivity : AppCompatActivity() {
 
             val success = wifiManager.connectSecondary(ssid, pass) { DualWifiLogger.i(TAG, it) }
             if (success) {
-                tvSecondarySub.text = "Connected & Accelerated"
-                tvSecondaryBadge.text = "Accelerated"
+                // Only the request is in place; refreshStatus() shows the link once wlan1 is up.
+                tvSecondarySub.text = "Requested $ssid, waiting for the second link..."
+                tvSecondaryBadge.text = "Waiting"
                 switchDualWifi.isChecked = true
-                DualWifiLogger.i(TAG, "Dual Wi-Fi successfully engaged with $ssid")
+                DualWifiLogger.i(TAG, "Dual Wi-Fi requested with $ssid")
             } else {
                 tvSecondarySub.text = "Connection failed - tap to retry"
                 tvSecondaryBadge.text = "Failed"
@@ -530,6 +519,12 @@ class DualWifiActivity : AppCompatActivity() {
         } else if (w1.isUp) {
             tvSecondarySub.text = "Antenna ready, connecting..."
             tvSecondaryBadge.text = "Ready"
+        } else if (switchDualWifi.isChecked) {
+            // Requested but not up: tell the user what's blocking it, if it's fixable.
+            val hint = wifiManager.diagnoseSecondary()
+            tvSecondarySub.text = hint?.message ?: "Waiting for the second link..."
+            tvSecondaryBadge.text = if (hint != null) "Action needed" else "Waiting"
+            hint?.enableNetworkId?.let { offerEnable(it, hint.enableSsid ?: "this network") }
         } else {
             tvSecondarySub.text = "Tap below to select network"
             tvSecondaryBadge.text = "Offline"
@@ -617,6 +612,20 @@ class DualWifiActivity : AppCompatActivity() {
                 (if (splitTargets.isEmpty()) "off" else splitTargets.joinToString {
                     "${it.iface} ${(it.share * 100).toInt()}%" }) + "\n" +
                 "wlan0 Traffic: $totalWlan0 | wlan1 Traffic: $totalWlan1"
+    }
+
+    private fun offerEnable(networkId: Int, ssid: String) {
+        if (!offeredEnable.add(networkId) || isFinishing) return
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Enable \"$ssid\"?")
+            .setMessage("Android has disabled this saved network, so dual Wi-Fi can't use it as the second link. Enabling it keeps your current connection.")
+            .setPositiveButton("Enable") { _, _ ->
+                val ok = wifiManager.enableSavedNetwork(networkId)
+                DualWifiLogger.i(TAG, "Re-enabled saved network $networkId ($ssid): $ok")
+                Toast.makeText(this, if (ok) "Enabled $ssid" else "Couldn't enable $ssid", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     private fun formatBytes(bytes: Long): String {
