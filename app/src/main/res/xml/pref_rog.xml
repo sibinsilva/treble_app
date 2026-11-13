@@ -49,6 +49,11 @@
             android:key="rog_game_mode"
             android:title="Game mode"
             android:summary="High-rate touch scan mode and CPU scheduler boost for gaming" />
+        <Preference
+            android:layout="@layout/preference_custom_nav"
+            android:key="rog_airtriggers_open"
+            android:title="AirTriggers"
+            android:summary="Shoulder touch buttons: tap, squeeze and slide gestures, and in-game mapping" />
         <ListPreference
             android:layout="@layout/preference_list_custom"
             android:defaultValue="0"

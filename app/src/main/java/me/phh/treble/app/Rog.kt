@@ -153,13 +153,14 @@ object Rog: EntryStartup {
     private fun applyGameMode(sp: SharedPreferences) {
         val on = sp.getBoolean(RogSettings.gameMode, false)
         val value = if (on) "1" else "0"
-        writeToFileNofail("$TOUCH_IC_BASE/fts_game_mode", value)
+        // ASUS's init.asus.rc writes fts_game_mode when vendor.asus.gamingtype
+        // changes; a direct sysfs write from the app is refused (root:root 0644).
         Misc.safeSetprop("vendor.asus.gamingtype", value)
         // Raise the kernel's global scheduler boost so the touch IC's
         // 300/560 Hz scan rate isn't starved by competing background work.
-        // /proc/sys/kernel/sched_boost is confirmed present on this kernel;
-        // writeToFileNofail silently skips it on kernels that lack it.
-        writeToFileNofail("/proc/sys/kernel/sched_boost", value)
+        // The app can't write /proc/sys/kernel/sched_boost itself, so
+        // rog-features.rc applies sys.phh.rog.sched_boost as root.
+        Misc.safeSetprop("sys.phh.rog.sched_boost", value)
     }
 
     private fun applyTouchReportRate(sp: SharedPreferences) {
@@ -201,7 +202,9 @@ object Rog: EntryStartup {
         // echo 1 > /sys/class/asuslib/bypass_stop_charging  → 1 read-back ✓
         // echo 0 > /sys/class/asuslib/bypass_stop_charging  → 0 read-back ✓
         val on = sp.getBoolean(RogSettings.bypassCharging, false)
-        writeToFileNofail("/sys/class/asuslib/bypass_stop_charging", if (on) "1" else "0")
+        // /sys/class/asuslib/bypass_stop_charging is root:root 0644, so
+        // rog-features.rc writes it as root from sys.phh.rog.bypass.
+        Misc.safeSetprop("sys.phh.rog.bypass", if (on) "1" else "0")
     }
 
     private fun applyDualWifi(sp: SharedPreferences) {
@@ -229,12 +232,14 @@ object Rog: EntryStartup {
             }
         }
 
-        // ASUS Stock DBS hardware antenna switch
+        // ASUS Stock DBS hardware antenna switch. The sysfs node and the
+        // vendor netutild property are both out of reach for system_app, so
+        // rog-features.rc applies these two props as root.
         if (mode > 0) {
-            writeToFileNofail("/sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/do_wifi_antenna_switch", "1")
-            Misc.safeSetprop("vendor.asus.netutild.enabled", "1")
+            Misc.safeSetprop("sys.phh.rog.antenna", "1")
+            Misc.safeSetprop("sys.phh.rog.netutild", "1")
         } else {
-            writeToFileNofail("/sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/do_wifi_antenna_switch", "0")
+            Misc.safeSetprop("sys.phh.rog.antenna", "0")
         }
 
         // Multi-STA configs + multi-internet mode, applied as root by /system/bin/dualwifi.sh

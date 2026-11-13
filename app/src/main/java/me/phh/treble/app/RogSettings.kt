@@ -175,6 +175,25 @@ class RogSettingsFragment : PreferenceFragment() {
             true
         }
 
+        // AirTriggers settings come from ASUS's own ROGAirTrigger app (shipped
+        // with the ROG5 build); grey the entry out when it isn't installed.
+        val airTriggers = Intent("asus.intent.action.AIRTRIGGER")
+        findPreference("rog_airtriggers_open")?.let { pref ->
+            if (activity?.packageManager?.resolveActivity(airTriggers, 0) == null) {
+                pref.isEnabled = false
+                pref.summary = "ASUS AirTriggers app is not installed"
+            } else {
+                pref.setOnPreferenceClickListener {
+                    try {
+                        startActivity(airTriggers)
+                    } catch (t: Throwable) {
+                        android.util.Log.d("PHH", "Rog: cannot open AirTriggers", t)
+                    }
+                    true
+                }
+            }
+        }
+
         findPreference(RogSettings.edgeRejectStrength)!!.setOnPreferenceClickListener {
             showEdgeRejectDialog()
             true
