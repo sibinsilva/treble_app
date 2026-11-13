@@ -205,8 +205,9 @@ class DualWifiManager(private val context: Context) {
         DualWifiLogger.i(TAG, "Ensuring secondary DBS STA interface is ready...")
         logger("Configuring ASUS DBS antenna switch & Wi-Fi HAL...")
 
-        RootShell.run("echo 1 > /sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/do_wifi_antenna_switch 2>/dev/null")
-        RootShell.run("setprop vendor.asus.netutild.enabled 1")
+        // No su for the app under KernelSU: the ROG5 rog-features.rc applies these as root.
+        Misc.safeSetprop("sys.phh.rog.antenna", "1")
+        Misc.safeSetprop("sys.phh.rog.netutild", "1")
 
         val check = RootShell.run("ip link show wlan1 2>/dev/null")
         var exists = check.isSuccess && !check.output.contains("does not exist") && check.output.isNotEmpty()
@@ -481,11 +482,13 @@ class DualWifiManager(private val context: Context) {
         } catch (_: Exception) { -1 }
         sb.appendLine("3. wifi_multi_internet_mode: $multiMode")
 
-        val antRes = RootShell.run("cat /sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/do_wifi_antenna_switch 2>/dev/null")
-        sb.appendLine("4. ASUS Antenna Switch: ${if (antRes.isSuccess) antRes.output.trim() else "N/A"}")
+        // The antenna node and ps need root, which the app doesn't have under
+        // KernelSU; report the requested state and init's service state instead.
+        val ant = android.os.SystemProperties.get("sys.phh.rog.antenna", "")
+        sb.appendLine("4. ASUS Antenna Switch: ${if (ant.isEmpty()) "N/A" else ant}")
 
-        val netutilRes = RootShell.run("ps -ef | grep netutil 2>/dev/null")
-        val netutilActive = netutilRes.output.contains("netutild")
+        val netutilActive = listOf("init.svc.netutild_V1.1", "init.svc.netutild")
+            .any { android.os.SystemProperties.get(it, "") == "running" }
         sb.appendLine("5. ASUS netutild: ${if (netutilActive) "Running" else "Stopped"}")
 
         val targets = DualWifiSplitter.activeTargets
